@@ -1,0 +1,77 @@
+services:
+  traefik:
+    image: traefik:3.6.4
+    container_name: traefik
+    restart: always
+
+    ports:
+      - 80:80
+      - 443:443
+
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=traefik-public
+
+      # Dashboard service
+      - traefik.http.services.traefik-dashboard.loadbalancer.server.port=8080
+
+      # HTTP router → redirect to HTTPS
+      - traefik.http.routers.traefik-dashboard-http.entrypoints=http
+      - traefik.http.routers.traefik-dashboard-http.rule=Host(`traefik.${DOMAIN}`)
+      - traefik.http.routers.traefik-dashboard-http.middlewares=https-redirect
+
+      # HTTPS router
+      - traefik.http.routers.traefik-dashboard-https.entrypoints=https
+      - traefik.http.routers.traefik-dashboard-https.rule=Host(`traefik.${DOMAIN}`)
+      - traefik.http.routers.traefik-dashboard-https.tls=true
+      - traefik.http.routers.traefik-dashboard-https.service=api@internal
+
+      # HTTPS redirect middleware
+      - traefik.http.middlewares.https-redirect.redirectscheme.scheme=https
+      - traefik.http.middlewares.https-redirect.redirectscheme.permanent=true
+
+      # Dashboard basic auth
+      - traefik.http.middlewares.admin-auth.basicauth.users=${USERNAME}:${HASHED_PASSWORD}
+      - traefik.http.routers.traefik-dashboard-https.middlewares=admin-auth
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+      # Static certificate files
+      - ./certs:/certs:ro
+
+      # Dynamic TLS config
+      - ./certs-dynamic:/certs-dynamic:ro
+
+    command:
+      # Docker provider
+      - --providers.docker
+      - --providers.docker.exposedbydefault=false
+
+      # File provider for static certificate
+      - --providers.file.directory=/certs-dynamic
+      - --providers.file.watch=true
+
+      # Entry points
+      - --entrypoints.http.address=:80
+      - --entrypoints.https.address=:443
+
+      # HTTP → HTTPS redirect
+      - --entrypoints.http.http.redirections.entrypoint.to=https
+      - --entrypoints.http.http.redirections.entrypoint.scheme=https
+      - --entrypoints.http.http.redirections.entrypoint.permanent=true
+
+      # Logging & dashboard
+      - --log.level=INFO
+      - --accesslog=true
+      - --api.dashboard=true
+
+    networks:
+      - traefik-public
+
+volumes:
+  traefik-public-certificates:
+
+networks:
+  traefik-public:
+    external: true
